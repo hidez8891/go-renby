@@ -14,74 +14,82 @@ const (
 )
 
 func main() {
-	// Define flags
-	reverse := flag.Bool("r", false, "reverse order")
-	reverseLong := flag.Bool("reverse", false, "reverse order")
-	pattern := flag.String("p", "000000", "rename pattern (0: decimal, x: hexadecimal)")
-	patternLong := flag.String("pattern", "000000", "rename pattern (0: decimal, x: hexadecimal)")
-	pre := flag.String("pre", "", "prefix string")
-	post := flag.String("post", "", "postfix string")
-	help := flag.Bool("help", false, "show help")
-	ver := flag.Bool("version", false, "show version")
+	var (
+		reverse = flag.Bool("r", false, "reverse order")
+		pattern = flag.String("p", "000000", "rename pattern (0: decimal, x: hexadecimal)")
+		pre     = flag.String("pre", "", "prefix string")
+		post    = flag.String("post", "", "postfix string")
+		help    = flag.Bool("help", false, "show help")
+		ver     = flag.Bool("version", false, "show version")
+	)
+
+	// Add long option aliases
+	flag.Bool("reverse", false, "reverse order")
+	flag.String("pattern", "000000", "rename pattern (0: decimal, x: hexadecimal)")
 
 	flag.Parse()
 
-	// Show help
 	if *help {
 		showHelp()
 		os.Exit(0)
 	}
 
-	// Show version
 	if *ver {
 		fmt.Printf("renby version %s\n", version)
 		os.Exit(0)
 	}
 
-	// Get subcommand and pattern
 	args := flag.Args()
-	if len(args) < 2 {
-		fmt.Fprintf(os.Stderr, "Error: insufficient arguments\n")
+	if len(args) < 1 {
+		fmt.Fprintf(os.Stderr, "Error: subcommand required\n")
 		showHelp()
 		os.Exit(1)
 	}
 
 	subCmd := args[0]
-	filePattern := args[1]
-
-	// Validate subcommand
 	if !isValidSubCmd(subCmd) {
 		fmt.Fprintf(os.Stderr, "Error: invalid subcommand '%s'\n", subCmd)
 		showHelp()
 		os.Exit(1)
 	}
 
-	// Get effective pattern and reverse flag
-	effectivePattern := *pattern
-	if *patternLong != "000000" {
-		effectivePattern = *patternLong
-	}
-	isReverse := *reverse || *reverseLong
-
-	// Get matching files
-	files, err := filepath.Glob(filePattern)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: invalid file pattern '%s'\n", filePattern)
+	filePatterns := args[1:]
+	if len(filePatterns) == 0 {
+		fmt.Fprintf(os.Stderr, "Error: file pattern required\n")
+		showHelp()
 		os.Exit(1)
 	}
 
-	// Create options
-	opts := renby.Options{
-		Pre:      *pre,
-		Post:     *post,
-		Pattern:  effectivePattern,
-		Reverse:  isReverse,
-		FileMode: parseSortMode(subCmd),
+	// Get matching files from all patterns
+	var files []string
+	for _, pat := range filePatterns {
+		matches, err := filepath.Glob(pat)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: invalid file pattern '%s'\n", pat)
+			os.Exit(1)
+		}
+		if len(matches) == 0 {
+			fmt.Fprintf(os.Stderr, "Warning: no files match pattern '%s'\n", pat)
+			continue
+		}
+		files = append(files, matches...)
+	}
+
+	if len(files) == 0 {
+		fmt.Fprintf(os.Stderr, "Error: no files found\n")
+		os.Exit(1)
 	}
 
 	// Execute renaming
-	err = renby.RenameFiles(files, opts)
-	if err != nil {
+	opts := renby.Options{
+		Pre:      *pre,
+		Post:     *post,
+		Pattern:  *pattern,
+		Reverse:  *reverse,
+		FileMode: parseSortMode(subCmd),
+	}
+
+	if err := renby.RenameFiles(files, opts); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
@@ -113,7 +121,7 @@ func parseSortMode(cmd string) renby.SortMode {
 }
 
 func showHelp() {
-	fmt.Println(`Usage: renby SUBCOMMAND [OPTIONS] PATTERN
+	fmt.Println(`Usage: renby SUBCOMMAND [OPTIONS] FILES...
 
 SUBCOMMAND:
   ctime     sort by creation time
