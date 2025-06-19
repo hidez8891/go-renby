@@ -6,7 +6,7 @@ creation time, etc.)
 ## Installation
 
 ```bash
-go get github.com/hidez8891/go-renby
+go install github.com/hidez8891/go-renby/cmd/renby@latest
 ```
 
 ## Usage
