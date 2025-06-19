@@ -53,7 +53,16 @@ func main() {
 		os.Exit(1)
 	}
 
-	filePatterns := args[1:]
+	// Get file patterns after the subcommand, excluding any flags
+	var filePatterns []string
+	for _, arg := range args[1:] {
+		// Skip if arg starts with - or -- (flags)
+		if len(arg) > 0 && arg[0] == '-' {
+			continue
+		}
+		filePatterns = append(filePatterns, arg)
+	}
+
 	if len(filePatterns) == 0 {
 		fmt.Fprintf(os.Stderr, "Error: file pattern required\n")
 		showHelp()
