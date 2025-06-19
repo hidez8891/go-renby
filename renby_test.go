@@ -1,46 +1,101 @@
 package renby
 
 import (
+	"fmt"
+	"math/rand"
 	"os"
 	"path/filepath"
+	"slices"
+	"sort"
 	"testing"
 	"time"
 )
 
-func TestRenameFiles(t *testing.T) {
+type fileInfo struct {
+	name string
+	size int64
+}
+
+func generateTestFiles(n int) (string, error) {
 	// Create temporary test directory
 	tempDir, err := os.MkdirTemp("", "renby-test-*")
 	if err != nil {
-		t.Fatalf("failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tempDir)
-
-	// Create test files with different sizes and times
-	testFiles := []struct {
-		name string
-		size int64
-	}{
-		{"test1.txt", 100},
-		{"test2.txt", 50},
-		{"test3.txt", 200},
+		return "", fmt.Errorf("failed to create temp dir: %w", err)
 	}
 
-	var files []string
-	for _, tf := range testFiles {
-		path := filepath.Join(tempDir, tf.name)
-		if err := os.WriteFile(path, make([]byte, tf.size), 0644); err != nil {
-			t.Fatalf("failed to create test file: %v", err)
+	sizes := make([]int64, n)
+	for i := 0; i < n; i++ {
+		sizes[i] = int64(i+1) * 10
+	}
+	rand.Shuffle(len(sizes), func(i, j int) {
+		sizes[i], sizes[j] = sizes[j], sizes[i]
+	})
+
+	testFiles := make([]fileInfo, n)
+	for i := 0; i < n; i++ {
+		name := filepath.Join(tempDir, fmt.Sprintf("test%d.txt", i+1))
+		size := sizes[i]
+		if err := os.WriteFile(name, make([]byte, size), 0644); err != nil {
+			return "", fmt.Errorf("failed to create test file %s: %w", name, err)
 		}
-		files = append(files, path)
-		// Add delay to ensure different timestamps
-		time.Sleep(100 * time.Millisecond)
+		testFiles[i] = fileInfo{name: name, size: size}
+		time.Sleep(10 * time.Millisecond) // Ensure different timestamps
 	}
 
+	return tempDir, nil
+}
+
+func generateResultNames(format string, n int) []string {
+	results := make([]string, n)
+	for i := 0; i < n; i++ {
+		results[i] = fmt.Sprintf(format, i+1)
+	}
+	return results
+}
+
+func TestRenameFiles(t *testing.T) {
+	testN := 16
 	tests := []struct {
-		name      string
-		opts      Options
-		wantOrder []string
+		name    string
+		opts    Options
+		results []string
 	}{
+		{
+			name: "sort by creation time asc",
+			opts: Options{
+				Pattern:  "000",
+				FileMode: SortByCreationTime,
+				Reverse:  false,
+			},
+			results: generateResultNames("%03d.txt", testN),
+		},
+		{
+			name: "sort by creation time desc",
+			opts: Options{
+				Pattern:  "00000",
+				FileMode: SortByCreationTime,
+				Reverse:  true,
+			},
+			results: generateResultNames("%05d.txt", testN),
+		},
+		{
+			name: "sort by modification time asc",
+			opts: Options{
+				Pattern:  "0000",
+				FileMode: SortByModificationTime,
+				Reverse:  false,
+			},
+			results: generateResultNames("%04d.txt", testN),
+		},
+		{
+			name: "sort by modification time desc",
+			opts: Options{
+				Pattern:  "000",
+				FileMode: SortByModificationTime,
+				Reverse:  true,
+			},
+			results: generateResultNames("%03d.txt", testN),
+		},
 		{
 			name: "sort by size asc",
 			opts: Options{
@@ -48,7 +103,7 @@ func TestRenameFiles(t *testing.T) {
 				FileMode: SortBySize,
 				Reverse:  false,
 			},
-			wantOrder: []string{"001.txt", "002.txt", "003.txt"},
+			results: generateResultNames("%03d.txt", testN),
 		},
 		{
 			name: "sort by size desc",
@@ -57,7 +112,7 @@ func TestRenameFiles(t *testing.T) {
 				FileMode: SortBySize,
 				Reverse:  true,
 			},
-			wantOrder: []string{"001.txt", "002.txt", "003.txt"},
+			results: generateResultNames("%03d.txt", testN),
 		},
 		{
 			name: "sort with prefix and postfix",
@@ -68,7 +123,7 @@ func TestRenameFiles(t *testing.T) {
 				FileMode: SortBySize,
 				Reverse:  false,
 			},
-			wantOrder: []string{"img01test.txt", "img02test.txt", "img03test.txt"},
+			results: generateResultNames("img%02dtest.txt", testN),
 		},
 		{
 			name: "sort with hex pattern",
@@ -77,44 +132,101 @@ func TestRenameFiles(t *testing.T) {
 				FileMode: SortBySize,
 				Reverse:  false,
 			},
-			wantOrder: []string{"001.txt", "002.txt", "003.txt"},
+			results: generateResultNames("%03x.txt", testN),
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			// Generate test files
+			tempDir, err := generateTestFiles(testN)
+			if err != nil {
+				t.Fatalf("failed to generate test files: %v", err)
+			}
+			defer os.RemoveAll(tempDir) // Clean up after test
+
+			// Prepare file paths for renaming
+			preentries, err := os.ReadDir(tempDir)
+			if err != nil {
+				t.Fatalf("failed to read dir: %v", err)
+			}
+
+			files := make([]string, len(preentries))
+			for i, entry := range preentries {
+				files[i] = filepath.Join(tempDir, entry.Name())
+			}
+
+			// Prepare file entries for sorting
+			switch tt.opts.FileMode {
+			case SortByCreationTime:
+				sort.Slice(preentries, func(i, j int) bool {
+					info1, _ := getFileInfo(filepath.Join(tempDir, preentries[i].Name()))
+					info2, _ := getFileInfo(filepath.Join(tempDir, preentries[j].Name()))
+					return info1.CreateTime.Before(info2.CreateTime)
+				})
+			case SortByModificationTime:
+				sort.Slice(preentries, func(i, j int) bool {
+					info1, _ := getFileInfo(filepath.Join(tempDir, preentries[i].Name()))
+					info2, _ := getFileInfo(filepath.Join(tempDir, preentries[j].Name()))
+					return info1.ModTime.Before(info2.ModTime)
+				})
+			case SortByAccessTime:
+				sort.Slice(preentries, func(i, j int) bool {
+					info1, _ := getFileInfo(filepath.Join(tempDir, preentries[i].Name()))
+					info2, _ := getFileInfo(filepath.Join(tempDir, preentries[j].Name()))
+					return info1.AccessTime.Before(info2.AccessTime)
+				})
+			case SortBySize:
+				sort.Slice(preentries, func(i, j int) bool {
+					info1, _ := getFileInfo(filepath.Join(tempDir, preentries[i].Name()))
+					info2, _ := getFileInfo(filepath.Join(tempDir, preentries[j].Name()))
+					return info1.Size < info2.Size
+				})
+			}
+			if tt.opts.Reverse {
+				slices.Reverse(preentries)
+			}
+
+			resultFileOrder := make([]int64, len(preentries))
+			for i := range preentries {
+				info, _ := preentries[i].Info()
+				resultFileOrder[i] = info.Size()
+			}
+
 			// Execute rename
 			if err := RenameFiles(files, tt.opts); err != nil {
 				t.Fatalf("RenameFiles() error = %v", err)
 			}
 
-			// Verify renamed files
+			// Verify renamed files and their order
 			entries, err := os.ReadDir(tempDir)
 			if err != nil {
 				t.Fatalf("failed to read dir: %v", err)
 			}
-
-			if len(entries) != len(tt.wantOrder) {
-				t.Errorf("got %d files, want %d", len(entries), len(tt.wantOrder))
+			if len(entries) != len(tt.results) {
+				t.Errorf("got %d files, want %d", len(entries), len(tt.results))
 			}
+			sort.Slice(entries, func(i, j int) bool {
+				return entries[i].Name() < entries[j].Name()
+			})
 
-			for i, want := range tt.wantOrder {
-				if i >= len(entries) {
-					break
-				}
+			// Verify file names
+			for i, want := range tt.results {
 				if got := entries[i].Name(); got != want {
 					t.Errorf("file[%d] = %s, want %s", i, got, want)
 				}
 			}
 
-			// Reset file names for next test
+			// Verify sort order based on file properties
 			for i, entry := range entries {
-				oldPath := filepath.Join(tempDir, entry.Name())
-				newPath := filepath.Join(tempDir, testFiles[i].name)
-				if err := os.Rename(oldPath, newPath); err != nil {
-					t.Fatalf("failed to reset file name: %v", err)
+				info, err := entry.Info()
+				if err != nil {
+					t.Fatalf("failed to get file info for %s: %v", entry.Name(), err)
 				}
-				files[i] = newPath
+
+				if info.Size() != resultFileOrder[i] {
+					t.Errorf("sort is maybe failed: file[%d] ID = %d, want %d", i, info.Size(), resultFileOrder[i])
+				}
 			}
 		})
 	}

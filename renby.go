@@ -7,6 +7,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/hidez8891/go-renby/internal/ostime"
 )
 
 // SortMode represents the file sorting mode
@@ -45,15 +47,15 @@ func getFileInfo(path string) (FileInfo, error) {
 	}
 
 	fi := FileInfo{
-		Path:    path,
-		Size:    info.Size(),
-		ModTime: info.ModTime(),
+		Path: path,
+		Size: info.Size(),
 	}
 
-	// For Windows: Use ModTime as AccessTime and CreateTime
-	// as these values might not be available on all platforms
-	fi.AccessTime = info.ModTime()
-	fi.CreateTime = info.ModTime()
+	// Get system-specific file times
+	ostime := ostime.GetOsTime(info)
+	fi.CreateTime = ostime.CreationTime
+	fi.ModTime = ostime.ModificationTime
+	fi.AccessTime = ostime.AccessTime
 
 	return fi, nil
 }
