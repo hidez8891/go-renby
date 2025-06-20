@@ -29,6 +29,7 @@ renby SUBCOMMAND [OPTIONS] FILES
   - '0': Zero-padded decimal numbers
   - 'x': Zero-padded lowercase hexadecimal numbers
   - Default: '000000'
+- `--init=NUMBER`: Initial number for renaming pattern (default: 1)
 - `--pre=STRING`: Prefix string for renamed files (default: '')
 - `--post=STRING`: Suffix string for renamed files (default: '')
 - `--help`: Show help message
