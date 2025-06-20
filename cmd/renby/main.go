@@ -23,6 +23,7 @@ type config struct {
 	post         string
 	help         bool
 	version      bool
+	init         int
 	filePatterns []string
 }
 
@@ -90,6 +91,7 @@ func run(args []string) error {
 		Pattern:  cfg.pattern,
 		Reverse:  cfg.reverse,
 		FileMode: parseSortMode(subCmd),
+		Init:     cfg.init,
 	}
 
 	return renby.RenameFiles(files, opts)
@@ -101,6 +103,7 @@ func parseFlags(name string, args []string) (*config, error) {
 	cfg := &config{}
 	flags.BoolVarP(&cfg.reverse, "reverse", "r", false, "reverse order")
 	flags.StringVarP(&cfg.pattern, "pattern", "p", defaultPattern, "rename pattern (0: decimal, x: hexadecimal)")
+	flags.IntVar(&cfg.init, "init", 1, "initial number (non-negative)")
 	flags.StringVar(&cfg.pre, "pre", "", "prefix string")
 	flags.StringVar(&cfg.post, "post", "", "postfix string")
 	flags.BoolVar(&cfg.help, "help", false, "show help")
@@ -195,6 +198,8 @@ OPTIONS:
   -r, --reverse         reverse sort order
   -p, --pattern=STRING  rename pattern (0: decimal, x: hexadecimal)
                         default: 000000
+  --init=NUMBER         initial number (non-negative)
+                        default: 1
   --pre=STRING          prefix string
   --post=STRING         postfix string
   --help                show this help
@@ -203,7 +208,8 @@ OPTIONS:
 Example:
   renby ctime *.png
   renby size -r --pre=img --post=test *.jpg
-  renby size -p=xxx *.txt`)
+  renby size -p=xxx *.txt
+  renby size --init=100 *.txt`)
 }
 
 func showVersion() {

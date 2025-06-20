@@ -47,12 +47,16 @@ func generateTestFiles(n int) (string, error) {
 	return tempDir, nil
 }
 
-func generateResultNames(format string, n int) []string {
+func generateResultNamesWithInit(format string, n int, init int) []string {
 	results := make([]string, n)
 	for i := 0; i < n; i++ {
-		results[i] = fmt.Sprintf(format, i+1)
+		results[i] = fmt.Sprintf(format, i+init)
 	}
 	return results
+}
+
+func generateResultNames(format string, n int) []string {
+	return generateResultNamesWithInit(format, n, 1)
 }
 
 func TestRenameFiles(t *testing.T) {
@@ -68,6 +72,7 @@ func TestRenameFiles(t *testing.T) {
 				Pattern:  "000",
 				FileMode: SortByCreationTime,
 				Reverse:  false,
+				Init:     1,
 			},
 			results: generateResultNames("%03d.txt", testN),
 		},
@@ -77,6 +82,7 @@ func TestRenameFiles(t *testing.T) {
 				Pattern:  "00000",
 				FileMode: SortByCreationTime,
 				Reverse:  true,
+				Init:     1,
 			},
 			results: generateResultNames("%05d.txt", testN),
 		},
@@ -86,6 +92,7 @@ func TestRenameFiles(t *testing.T) {
 				Pattern:  "0000",
 				FileMode: SortByModificationTime,
 				Reverse:  false,
+				Init:     1,
 			},
 			results: generateResultNames("%04d.txt", testN),
 		},
@@ -95,6 +102,7 @@ func TestRenameFiles(t *testing.T) {
 				Pattern:  "000",
 				FileMode: SortByModificationTime,
 				Reverse:  true,
+				Init:     1,
 			},
 			results: generateResultNames("%03d.txt", testN),
 		},
@@ -104,6 +112,7 @@ func TestRenameFiles(t *testing.T) {
 				Pattern:  "000",
 				FileMode: SortBySize,
 				Reverse:  false,
+				Init:     1,
 			},
 			results: generateResultNames("%03d.txt", testN),
 		},
@@ -113,6 +122,7 @@ func TestRenameFiles(t *testing.T) {
 				Pattern:  "000",
 				FileMode: SortBySize,
 				Reverse:  true,
+				Init:     1,
 			},
 			results: generateResultNames("%03d.txt", testN),
 		},
@@ -124,6 +134,7 @@ func TestRenameFiles(t *testing.T) {
 				Pattern:  "00",
 				FileMode: SortBySize,
 				Reverse:  false,
+				Init:     1,
 			},
 			results: generateResultNames("img%02dtest.txt", testN),
 		},
@@ -133,8 +144,39 @@ func TestRenameFiles(t *testing.T) {
 				Pattern:  "xxx",
 				FileMode: SortBySize,
 				Reverse:  false,
+				Init:     1,
 			},
 			results: generateResultNames("%03x.txt", testN),
+		},
+		{
+			name: "sort with init number 100",
+			opts: Options{
+				Pattern:  "000",
+				FileMode: SortBySize,
+				Reverse:  false,
+				Init:     100,
+			},
+			results: generateResultNamesWithInit("%03d.txt", testN, 100),
+		},
+		{
+			name: "sort with init hex",
+			opts: Options{
+				Pattern:  "xxx",
+				FileMode: SortBySize,
+				Reverse:  false,
+				Init:     10,
+			},
+			results: generateResultNamesWithInit("%03x.txt", testN, 10),
+		},
+		{
+			name: "sort with init zero",
+			opts: Options{
+				Pattern:  "000",
+				FileMode: SortBySize,
+				Reverse:  false,
+				Init:     0,
+			},
+			results: generateResultNamesWithInit("%03d.txt", testN, 0),
 		},
 	}
 
@@ -231,6 +273,22 @@ func TestRenameFiles(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestRenameFiles_NegativeInit(t *testing.T) {
+	opts := Options{
+		Pattern:  "000",
+		FileMode: SortBySize,
+		Init:     -1,
+	}
+
+	err := RenameFiles([]string{"test.txt"}, opts)
+	if err == nil {
+		t.Error("RenameFiles() error = nil, want error for negative init")
+	}
+	if err.Error() != "invalid options: init value must be non-negative" {
+		t.Errorf("RenameFiles() error = %v, want 'invalid options: init value must be non-negative'", err)
 	}
 }
 

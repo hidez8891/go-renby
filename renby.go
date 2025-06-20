@@ -37,12 +37,16 @@ type Options struct {
 	Pattern  string
 	Reverse  bool
 	FileMode SortMode
+	Init     int // default: 1
 }
 
 // Validate checks if the options are valid
-func (o Options) Validate() error {
+func (o *Options) Validate() error {
 	if o.Pattern == "" {
 		return fmt.Errorf("pattern cannot be empty")
+	}
+	if o.Init < 0 {
+		return fmt.Errorf("init value must be non-negative")
 	}
 	return nil
 }
@@ -127,9 +131,9 @@ func generateNewName(fi FileInfo, index int, opts Options) string {
 
 	var newName string
 	if strings.Contains(opts.Pattern, "x") {
-		newName = fmt.Sprintf("%s%0*x%s%s", opts.Pre, len(opts.Pattern), index+1, opts.Post, ext)
+		newName = fmt.Sprintf("%s%0*x%s%s", opts.Pre, len(opts.Pattern), index+opts.Init, opts.Post, ext)
 	} else {
-		newName = fmt.Sprintf("%s%0*d%s%s", opts.Pre, len(opts.Pattern), index+1, opts.Post, ext)
+		newName = fmt.Sprintf("%s%0*d%s%s", opts.Pre, len(opts.Pattern), index+opts.Init, opts.Post, ext)
 	}
 
 	return filepath.Join(dir, newName)
@@ -137,7 +141,7 @@ func generateNewName(fi FileInfo, index int, opts Options) string {
 
 // RenameFiles renames files according to the specified options
 func RenameFiles(files []string, opts Options) error {
-	if err := opts.Validate(); err != nil {
+	if err := (&opts).Validate(); err != nil {
 		return fmt.Errorf("invalid options: %w", err)
 	}
 
