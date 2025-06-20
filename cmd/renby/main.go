@@ -4,13 +4,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 
 	"github.com/hidez8891/go-renby"
 	"github.com/spf13/pflag"
-)
-
-const (
-	version = "0.1.0"
 )
 
 func main() {
@@ -168,5 +165,9 @@ Example:
 }
 
 func showVersion() {
+	version := "(unknown)"
+	if buildInfo, ok := debug.ReadBuildInfo(); ok {
+		version = buildInfo.Main.Version
+	}
 	fmt.Printf("renby version %s\n", version)
 }
