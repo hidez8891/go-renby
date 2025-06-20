@@ -23,6 +23,7 @@ func generateTestFiles(n int) (string, error) {
 		return "", fmt.Errorf("failed to create temp dir: %w", err)
 	}
 
+	// Generate random sizes for test files
 	sizes := make([]int64, n)
 	for i := 0; i < n; i++ {
 		sizes[i] = int64(i+1) * 10
@@ -31,6 +32,7 @@ func generateTestFiles(n int) (string, error) {
 		sizes[i], sizes[j] = sizes[j], sizes[i]
 	})
 
+	// Create test files with different sizes and timestamps
 	testFiles := make([]fileInfo, n)
 	for i := 0; i < n; i++ {
 		name := filepath.Join(tempDir, fmt.Sprintf("test%d.txt", i+1))

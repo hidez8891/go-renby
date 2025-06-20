@@ -10,68 +10,121 @@ import (
 	"github.com/spf13/pflag"
 )
 
-func main() {
-	args := os.Args[:]
-	flags := pflag.NewFlagSet(args[0], pflag.ExitOnError)
+const (
+	defaultPattern = "000000"
+	exitSuccess    = 0
+	exitFailure    = 1
+)
 
-	if len(args) < 2 || args[1] == "--help" {
+type config struct {
+	reverse      bool
+	pattern      string
+	pre          string
+	post         string
+	help         bool
+	version      bool
+	filePatterns []string
+}
+
+func main() {
+	if err := run(os.Args[:]); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		showHelp()
-		os.Exit(0)
+		os.Exit(exitFailure)
+	}
+}
+
+func run(args []string) error {
+	if len(args) < 2 {
+		showHelp()
+		os.Exit(exitSuccess)
+		return nil
+	}
+
+	// Handle global flags first
+	if args[1] == "--help" {
+		showHelp()
+		os.Exit(exitSuccess)
+		return nil
 	}
 	if args[1] == "--version" {
 		showVersion()
-		os.Exit(0)
+		os.Exit(exitSuccess)
+		return nil
 	}
 
-	// Get subcommand
+	// Validate subcommand
 	subCmd := args[1]
 	if !isValidSubCmd(subCmd) {
-		fmt.Fprintf(os.Stderr, "Error: invalid subcommand '%s'\n", subCmd)
-		showHelp()
-		os.Exit(1)
+		return fmt.Errorf("invalid subcommand '%s'", subCmd)
 	}
 
-	// Parse flags
-	var (
-		reverse = flags.BoolP("reverse", "r", false, "reverse order")
-		pattern = flags.StringP("pattern", "p", "000000", "rename pattern (0: decimal, x: hexadecimal)")
-		pre     = flags.String("pre", "", "prefix string")
-		post    = flags.String("post", "", "postfix string")
-		help    = flags.Bool("help", false, "show help")
-		ver     = flags.Bool("version", false, "show version")
-	)
-
-	if err := flags.Parse(args[2:]); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		showHelp()
-		os.Exit(1)
+	// Parse configuration
+	cfg, err := parseFlags(args[0], args[2:])
+	if err != nil {
+		return err
 	}
 
-	if *help {
+	if cfg.help {
 		showHelp()
-		os.Exit(0)
+		os.Exit(exitSuccess)
+		return nil
 	}
 
-	if *ver {
+	if cfg.version {
 		showVersion()
-		os.Exit(0)
+		os.Exit(exitSuccess)
+		return nil
 	}
 
-	// Get file patterns
-	filePatterns := flags.Args()
-	if len(filePatterns) == 0 {
-		fmt.Fprintf(os.Stderr, "Error: file pattern required\n")
-		showHelp()
-		os.Exit(1)
+	// Process files
+	files, err := processFilePatterns(cfg.filePatterns)
+	if err != nil {
+		return err
 	}
 
-	// Get matching files from all patterns
+	// Execute renaming
+	opts := renby.Options{
+		Pre:      cfg.pre,
+		Post:     cfg.post,
+		Pattern:  cfg.pattern,
+		Reverse:  cfg.reverse,
+		FileMode: parseSortMode(subCmd),
+	}
+
+	return renby.RenameFiles(files, opts)
+}
+
+func parseFlags(name string, args []string) (*config, error) {
+	flags := pflag.NewFlagSet(name, pflag.ExitOnError)
+
+	cfg := &config{}
+	flags.BoolVarP(&cfg.reverse, "reverse", "r", false, "reverse order")
+	flags.StringVarP(&cfg.pattern, "pattern", "p", defaultPattern, "rename pattern (0: decimal, x: hexadecimal)")
+	flags.StringVar(&cfg.pre, "pre", "", "prefix string")
+	flags.StringVar(&cfg.post, "post", "", "postfix string")
+	flags.BoolVar(&cfg.help, "help", false, "show help")
+	flags.BoolVar(&cfg.version, "version", false, "show version")
+
+	if err := flags.Parse(args); err != nil {
+		return nil, err
+	}
+
+	// Store remaining args as file patterns
+	cfg.filePatterns = flags.Args()
+	if len(cfg.filePatterns) == 0 {
+		return nil, fmt.Errorf("file pattern required")
+	}
+
+	return cfg, nil
+}
+
+func processFilePatterns(patterns []string) ([]string, error) {
 	var files []string
-	for _, pat := range filePatterns {
+	for _, pat := range patterns {
 		matches, err := filepath.Glob(pat)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error: invalid file pattern '%s'\n", pat)
-			os.Exit(1)
+			return nil, fmt.Errorf("invalid file pattern '%s'", pat)
 		}
 		if len(matches) == 0 {
 			fmt.Fprintf(os.Stderr, "Warning: no files match pattern '%s'\n", pat)
@@ -80,39 +133,28 @@ func main() {
 		files = append(files, matches...)
 	}
 	if len(files) == 0 {
-		fmt.Fprintf(os.Stderr, "Error: no files found\n")
-		os.Exit(1)
+		return nil, fmt.Errorf("no files found")
 	}
 
-	// Remove duplicates while preserving order
+	return removeDuplicates(files)
+}
+
+func removeDuplicates(files []string) ([]string, error) {
 	savedFiles := make([]string, 0, len(files))
 	uniqueFiles := make(map[string]struct{})
+
 	for _, file := range files {
 		absPath, err := filepath.Abs(file)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error: could not get absolute path for '%s': %v\n", file, err)
-			os.Exit(1)
+			return nil, fmt.Errorf("could not get absolute path for '%s': %v", file, err)
 		}
 		if _, exists := uniqueFiles[absPath]; !exists {
 			uniqueFiles[absPath] = struct{}{}
 			savedFiles = append(savedFiles, absPath)
 		}
 	}
-	files = savedFiles
 
-	// Execute renaming
-	opts := renby.Options{
-		Pre:      *pre,
-		Post:     *post,
-		Pattern:  *pattern,
-		Reverse:  *reverse,
-		FileMode: parseSortMode(subCmd),
-	}
-
-	if err := renby.RenameFiles(files, opts); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
-	}
+	return savedFiles, nil
 }
 
 func isValidSubCmd(cmd string) bool {
