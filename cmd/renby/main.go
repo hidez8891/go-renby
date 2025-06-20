@@ -1,12 +1,12 @@
 package main
 
 import (
-	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
 
 	"github.com/hidez8891/go-renby"
+	"github.com/spf13/pflag"
 )
 
 const (
@@ -14,20 +14,41 @@ const (
 )
 
 func main() {
+	args := os.Args[:]
+	flags := pflag.NewFlagSet(args[0], pflag.ExitOnError)
+
+	if len(args) < 2 || args[1] == "--help" {
+		showHelp()
+		os.Exit(0)
+	}
+	if args[1] == "--version" {
+		showVersion()
+		os.Exit(0)
+	}
+
+	// Get subcommand
+	subCmd := args[1]
+	if !isValidSubCmd(subCmd) {
+		fmt.Fprintf(os.Stderr, "Error: invalid subcommand '%s'\n", subCmd)
+		showHelp()
+		os.Exit(1)
+	}
+
+	// Parse flags
 	var (
-		reverse = flag.Bool("r", false, "reverse order")
-		pattern = flag.String("p", "000000", "rename pattern (0: decimal, x: hexadecimal)")
-		pre     = flag.String("pre", "", "prefix string")
-		post    = flag.String("post", "", "postfix string")
-		help    = flag.Bool("help", false, "show help")
-		ver     = flag.Bool("version", false, "show version")
+		reverse = flags.BoolP("reverse", "r", false, "reverse order")
+		pattern = flags.StringP("pattern", "p", "000000", "rename pattern (0: decimal, x: hexadecimal)")
+		pre     = flags.String("pre", "", "prefix string")
+		post    = flags.String("post", "", "postfix string")
+		help    = flags.Bool("help", false, "show help")
+		ver     = flags.Bool("version", false, "show version")
 	)
 
-	// Add long option aliases
-	flag.Bool("reverse", false, "reverse order")
-	flag.String("pattern", "000000", "rename pattern (0: decimal, x: hexadecimal)")
-
-	flag.Parse()
+	if err := flags.Parse(args[2:]); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		showHelp()
+		os.Exit(1)
+	}
 
 	if *help {
 		showHelp()
@@ -35,34 +56,12 @@ func main() {
 	}
 
 	if *ver {
-		fmt.Printf("renby version %s\n", version)
+		showVersion()
 		os.Exit(0)
 	}
 
-	args := flag.Args()
-	if len(args) < 1 {
-		fmt.Fprintf(os.Stderr, "Error: subcommand required\n")
-		showHelp()
-		os.Exit(1)
-	}
-
-	subCmd := args[0]
-	if !isValidSubCmd(subCmd) {
-		fmt.Fprintf(os.Stderr, "Error: invalid subcommand '%s'\n", subCmd)
-		showHelp()
-		os.Exit(1)
-	}
-
-	// Get file patterns after the subcommand, excluding any flags
-	var filePatterns []string
-	for _, arg := range args[1:] {
-		// Skip if arg starts with - or -- (flags)
-		if len(arg) > 0 && arg[0] == '-' {
-			continue
-		}
-		filePatterns = append(filePatterns, arg)
-	}
-
+	// Get file patterns
+	filePatterns := flags.Args()
 	if len(filePatterns) == 0 {
 		fmt.Fprintf(os.Stderr, "Error: file pattern required\n")
 		showHelp()
@@ -83,11 +82,26 @@ func main() {
 		}
 		files = append(files, matches...)
 	}
-
 	if len(files) == 0 {
 		fmt.Fprintf(os.Stderr, "Error: no files found\n")
 		os.Exit(1)
 	}
+
+	// Remove duplicates while preserving order
+	savedFiles := make([]string, 0, len(files))
+	uniqueFiles := make(map[string]struct{})
+	for _, file := range files {
+		absPath, err := filepath.Abs(file)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: could not get absolute path for '%s': %v\n", file, err)
+			os.Exit(1)
+		}
+		if _, exists := uniqueFiles[absPath]; !exists {
+			uniqueFiles[absPath] = struct{}{}
+			savedFiles = append(savedFiles, absPath)
+		}
+	}
+	files = savedFiles
 
 	// Execute renaming
 	opts := renby.Options{
@@ -141,14 +155,18 @@ SUBCOMMAND:
 OPTIONS:
   -r, --reverse         reverse sort order
   -p, --pattern=STRING  rename pattern (0: decimal, x: hexadecimal)
-                       default: 000000
-  --pre=STRING         prefix string
-  --post=STRING        postfix string
-  --help              show this help
-  --version           show version
+                        default: 000000
+  --pre=STRING          prefix string
+  --post=STRING         postfix string
+  --help                show this help
+  --version             show version
 
 Example:
   renby ctime *.png
   renby size -r --pre=img --post=test *.jpg
   renby size -p=xxx *.txt`)
+}
+
+func showVersion() {
+	fmt.Printf("renby version %s\n", version)
 }
