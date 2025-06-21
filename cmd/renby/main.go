@@ -16,6 +16,11 @@ const (
 	exitFailure    = 1
 )
 
+var (
+	// Version is set at build time using -X flag
+	Version = ""
+)
+
 type config struct {
 	reverse      bool
 	pattern      string
@@ -213,6 +218,13 @@ Example:
 }
 
 func showVersion() {
+	// go-build -ldflags="-X main.Version=XXX" to set Version at build time
+	if Version != "" {
+		fmt.Printf("renby version %s\n", Version)
+		return
+	}
+
+	// go-install is not set Version, so we try to read build info
 	version := "(unknown)"
 	if buildInfo, ok := debug.ReadBuildInfo(); ok {
 		version = buildInfo.Main.Version

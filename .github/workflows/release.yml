@@ -19,18 +19,19 @@ jobs:
 
       - name: Build for Windows
         run: |
-          GOOS=windows GOARCH=amd64 go build -o renby.exe ./cmd/renby
+          GOOS=windows GOARCH=amd64 go build -ldflags="-X main.Version=${{ github.ref_name }}" -o renby.exe ./cmd/renby
           zip renby_windows.zip renby.exe
 
       - name: Build for Linux
         run: |
-          GOOS=linux GOARCH=amd64 go build -o renby ./cmd/renby
+          GOOS=linux GOARCH=amd64 go build -ldflags="-X main.Version=${{ github.ref_name }}" -o renby ./cmd/renby
           zip renby_linux.zip renby
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
           name: ${{ github.ref_name }} release
+          generate_release_notes: true
           files: |
             renby_windows.zip
             renby_linux.zip
