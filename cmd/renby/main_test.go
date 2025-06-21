@@ -168,6 +168,7 @@ func TestParseFlags(t *testing.T) {
 func TestProcessFilePatterns(t *testing.T) {
 	// Create temporary test files
 	tmpDir := t.TempDir()
+	defer os.RemoveAll(tmpDir)
 
 	files := []string{"test1.txt", "test2.txt", "test.jpg"}
 	for _, f := range files {
