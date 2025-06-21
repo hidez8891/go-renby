@@ -1,4 +1,4 @@
-# go-renby
+# go-renby (rename by)
 
 A CLI tool to rename files sequentially based on file information (file size,
 creation time, etc.)
