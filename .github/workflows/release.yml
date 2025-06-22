@@ -27,6 +27,11 @@ jobs:
           GOOS=linux GOARCH=amd64 go build -ldflags="-X main.Version=${{ github.ref_name }}" -o renby ./cmd/renby
           zip renby_linux.zip renby
 
+      - name: Build for macOS
+        run: |
+          GOOS=darwin GOARCH=amd64 go build -ldflags="-X main.Version=${{ github.ref_name }}" -o renby ./cmd/renby
+          zip renby_macos.zip renby
+
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
@@ -35,3 +40,4 @@ jobs:
           files: |
             renby_windows.zip
             renby_linux.zip
+            renby_macos.zip
