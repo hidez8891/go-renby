@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"slices"
 	"sort"
+	"strings"
 	"testing"
 	"time"
 )
@@ -304,5 +305,67 @@ func TestRenameFiles_Empty(t *testing.T) {
 
 	if err := RenameFiles([]string{}, opts); err != nil {
 		t.Errorf("RenameFiles() error = %v, want nil", err)
+	}
+}
+
+func TestRenameFiles_CollisionDetected(t *testing.T) {
+	dir := t.TempDir()
+	a := filepath.Join(dir, "A.txt")
+	b := filepath.Join(dir, "B.txt")
+	if err := os.WriteFile(a, []byte("a"), 0644); err != nil {
+		t.Fatalf("write a: %v", err)
+	}
+	if err := os.WriteFile(b, []byte("b"), 0644); err != nil {
+		t.Fatalf("write b: %v", err)
+	}
+
+	files := []string{a, b}
+	opts := Options{
+		Pattern:  "00000",
+		Init:     1,
+		FileMode: SortByCreationTime,
+	}
+
+	if err := RenameFiles(files, opts); err != nil {
+		t.Fatalf("initial rename failed: %v", err)
+	}
+
+	got, err := filepath.Glob(filepath.Join(dir, "*"))
+	if err != nil {
+		t.Fatalf("glob failed: %v", err)
+	}
+	var names []string
+	for _, p := range got {
+		names = append(names, filepath.Base(p))
+	}
+	sort.Strings(names)
+
+	want := []string{"00001.txt", "00002.txt"}
+	if !slices.Equal(names, want) {
+		t.Fatalf("unexpected names after first rename: got=%v want=%v", names, want)
+	}
+
+	// Attempt reverse without Force: should detect conflicts and return error
+	reverseOpts := opts
+	reverseOpts.Reverse = true
+	if err := RenameFiles(got, reverseOpts); err == nil {
+		t.Fatalf("expected conflict error on reverse rename, got nil")
+	} else if !strings.Contains(err.Error(), "conflicts detected") {
+		t.Fatalf("unexpected error message: %v", err)
+	}
+
+	// Now allow Force: should succeed
+	reverseForce := reverseOpts
+	reverseForce.ForceOverwrite = true
+	if err := RenameFiles(got, reverseForce); err != nil {
+		t.Fatalf("force rename failed: %v", err)
+	}
+
+	final, err := filepath.Glob(filepath.Join(dir, "*"))
+	if err != nil {
+		t.Fatalf("glob failed: %v", err)
+	}
+	if len(final) != 2 {
+		t.Fatalf("expected 2 files after force rename, got %d", len(final))
 	}
 }

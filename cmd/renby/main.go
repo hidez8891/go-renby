@@ -22,14 +22,15 @@ var (
 )
 
 type config struct {
-	reverse      bool
-	pattern      string
-	pre          string
-	post         string
-	help         bool
-	version      bool
-	init         int
-	filePatterns []string
+	reverse        bool
+	pattern        string
+	pre            string
+	post           string
+	forceOverwrite bool
+	help           bool
+	version        bool
+	init           int
+	filePatterns   []string
 }
 
 func main() {
@@ -91,12 +92,13 @@ func run(args []string) error {
 
 	// Execute renaming
 	opts := renby.Options{
-		Pre:      cfg.pre,
-		Post:     cfg.post,
-		Pattern:  cfg.pattern,
-		Reverse:  cfg.reverse,
-		FileMode: parseSortMode(subCmd),
-		Init:     cfg.init,
+		Pre:            cfg.pre,
+		Post:           cfg.post,
+		Pattern:        cfg.pattern,
+		Reverse:        cfg.reverse,
+		FileMode:       parseSortMode(subCmd),
+		Init:           cfg.init,
+		ForceOverwrite: false,
 	}
 
 	return renby.RenameFiles(files, opts)
@@ -111,6 +113,7 @@ func parseFlags(name string, args []string) (*config, error) {
 	flags.IntVar(&cfg.init, "init", 1, "initial number (non-negative)")
 	flags.StringVar(&cfg.pre, "pre", "", "prefix string")
 	flags.StringVar(&cfg.post, "post", "", "postfix string")
+	flags.BoolVar(&cfg.forceOverwrite, "force", false, "allow overwriting existing destination files (performs a safe two-phase rename)")
 	flags.BoolVar(&cfg.help, "help", false, "show help")
 	flags.BoolVar(&cfg.version, "version", false, "show version")
 
@@ -207,6 +210,7 @@ OPTIONS:
                         default: 1
   --pre=STRING          prefix string
   --post=STRING         postfix string
+  --force               allow overwriting existing destination files (performs a safe two-phase rename)
   --help                show this help
   --version             show version
 

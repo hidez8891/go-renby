@@ -32,12 +32,13 @@ type FileInfo struct {
 
 // Options represents configuration options for file renaming
 type Options struct {
-	Pre      string
-	Post     string
-	Pattern  string
-	Reverse  bool
-	FileMode SortMode
-	Init     int // default: 1
+	Pre            string
+	Post           string
+	Pattern        string
+	Reverse        bool
+	FileMode       SortMode
+	Init           int // default: 1
+	ForceOverwrite bool
 }
 
 // Validate checks if the options are valid
@@ -156,12 +157,128 @@ func RenameFiles(files []string, opts Options) error {
 
 	sortFiles(fileInfos, opts.FileMode, opts.Reverse)
 
+	// Build planned mapping: src -> dst
+	plan := make(map[string]string, len(fileInfos))
+	dstToSrc := make(map[string][]string)
+	srcSet := make(map[string]struct{}, len(fileInfos))
 	for i, fi := range fileInfos {
-		newPath := generateNewName(fi, i, opts)
-		if fi.Path != newPath {
-			if err := os.Rename(fi.Path, newPath); err != nil {
+		dst := generateNewName(fi, i, opts)
+		plan[fi.Path] = dst
+		dstToSrc[dst] = append(dstToSrc[dst], fi.Path)
+		srcSet[fi.Path] = struct{}{}
+	}
+
+	// Detect conflicts:
+	// - Multiple sources mapping to the same destination
+	// - Destination already exists on filesystem and is not one of the sources
+	var conflicts []string
+	for dst, srcs := range dstToSrc {
+		if len(srcs) > 1 {
+			conflicts = append(conflicts, fmt.Sprintf("multiple sources %v -> same destination %q", srcs, dst))
+		}
+		if _, ok := srcSet[dst]; !ok {
+			if _, err := os.Stat(dst); err == nil {
+				conflicts = append(conflicts, fmt.Sprintf("destination already exists: %q", dst))
+			}
+		}
+	}
+	// Detect cycles among mappings that stay within the source set (e.g., A->B, B->A)
+	for src := range plan {
+		cur := src
+		seen := map[string]bool{src: true}
+		for {
+			dst, ok := plan[cur]
+			if !ok {
+				break
+			}
+			if dst == cur {
+				// self-mapping, not a problematic cycle
+				break
+			}
+			if _, inSrc := srcSet[dst]; !inSrc {
+				// maps to outside set, handled above
+				break
+			}
+			if seen[dst] {
+				// collect cycle nodes for clearer message
+				cycle := []string{dst}
+				next := plan[dst]
+				for next != dst {
+					cycle = append(cycle, next)
+					next = plan[next]
+				}
+				conflicts = append(conflicts, fmt.Sprintf("cycle detected: %v", cycle))
+				break
+			}
+			seen[dst] = true
+			cur = dst
+		}
+	}
+
+	if len(conflicts) > 0 && !opts.ForceOverwrite {
+		return fmt.Errorf("conflicts detected, aborting: %s", strings.Join(conflicts, "; "))
+	}
+
+	// Perform renames.
+	// If Force is not set, we already prevented conflicts above and can do a direct rename.
+	if !opts.ForceOverwrite {
+		for src, dst := range plan {
+			if src == dst {
+				continue
+			}
+			if err := os.Rename(src, dst); err != nil {
 				return fmt.Errorf("failed to rename file: %w", err)
 			}
+		}
+		return nil
+	}
+
+	// Force mode: use safe two-phase renaming to avoid overwrites/cycles:
+	// 1) rename each src -> unique temp
+	// 2) rename each temp -> final dst
+	pid := os.Getpid()
+	temps := make(map[string]string, len(plan)) // src -> temp
+	counter := 0
+	for src, dst := range plan {
+		if src == dst {
+			continue
+		}
+		// build a unique temp name in same dir as dst
+		dir := filepath.Dir(dst)
+		ext := filepath.Ext(dst)
+		base := strings.TrimSuffix(filepath.Base(dst), ext)
+		var temp string
+		for {
+			temp = filepath.Join(dir, fmt.Sprintf("%s.renby.tmp.%d.%d%s", base, pid, counter, ext))
+			counter++
+			if _, err := os.Stat(temp); os.IsNotExist(err) {
+				break
+			}
+		}
+		if err := os.Rename(src, temp); err != nil {
+			return fmt.Errorf("failed to move source %q to temp %q: %w", src, temp, err)
+		}
+		temps[src] = temp
+	}
+
+	// move temps to final destinations
+	for src, dst := range plan {
+		if src == dst {
+			continue
+		}
+		temp := temps[src]
+		if temp == "" {
+			// shouldn't happen
+			return fmt.Errorf("missing temp for source %q", src)
+		}
+		// ensure dst does not exist (remove if present)
+		if _, err := os.Stat(dst); err == nil {
+			if err := os.Remove(dst); err != nil {
+				return fmt.Errorf("failed to remove existing destination %q: %w", dst, err)
+			}
+		}
+		if err := os.Rename(temp, dst); err != nil {
+			return fmt.Errorf("failed to rename temp %q to dst %q: %w", temp, dst, err)
 		}
 	}
 

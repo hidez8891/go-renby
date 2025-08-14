@@ -32,6 +32,7 @@ renby SUBCOMMAND [OPTIONS] FILES
 - `--init=NUMBER`: Initial number for renaming pattern (default: 1)
 - `--pre=STRING`: Prefix string for renamed files (default: '')
 - `--post=STRING`: Suffix string for renamed files (default: '')
+- `--force`: Allow overwriting existing destination files. (performs a safe two-phase rename)
 - `--help`: Show help message
 - `--version`: Show version number
 
