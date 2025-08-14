@@ -98,7 +98,7 @@ func run(args []string) error {
 		Reverse:        cfg.reverse,
 		FileMode:       parseSortMode(subCmd),
 		Init:           cfg.init,
-		ForceOverwrite: false,
+		ForceOverwrite: cfg.forceOverwrite,
 	}
 
 	return renby.RenameFiles(files, opts)

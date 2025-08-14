@@ -182,49 +182,25 @@ func RenameFiles(files []string, opts Options) error {
 			}
 		}
 	}
-	// Detect cycles among mappings that stay within the source set (e.g., A->B, B->A)
-	for src := range plan {
-		cur := src
-		seen := map[string]bool{src: true}
-		for {
-			dst, ok := plan[cur]
-			if !ok {
-				break
-			}
-			if dst == cur {
-				// self-mapping, not a problematic cycle
-				break
-			}
-			if _, inSrc := srcSet[dst]; !inSrc {
-				// maps to outside set, handled above
-				break
-			}
-			if seen[dst] {
-				// collect cycle nodes for clearer message
-				cycle := []string{dst}
-				next := plan[dst]
-				for next != dst {
-					cycle = append(cycle, next)
-					next = plan[next]
-				}
-				conflicts = append(conflicts, fmt.Sprintf("cycle detected: %v", cycle))
-				break
-			}
-			seen[dst] = true
-			cur = dst
-		}
-	}
 
 	if len(conflicts) > 0 && !opts.ForceOverwrite {
 		return fmt.Errorf("conflicts detected, aborting: %s", strings.Join(conflicts, "; "))
 	}
 
 	// Perform renames.
-	// If Force is not set, we already prevented conflicts above and can do a direct rename.
+	// If not ForceOverwrite, fail renames when any destination already exists.
+	// If the existing destination is itself one of the sources in this batch,
+	// report it as a conflict so callers receive "conflicts detected".
 	if !opts.ForceOverwrite {
 		for src, dst := range plan {
 			if src == dst {
 				continue
+			}
+			if _, err := os.Stat(dst); err == nil {
+				if _, isSource := srcSet[dst]; isSource {
+					return fmt.Errorf("conflicts detected: destination %q is also a source", dst)
+				}
+				return fmt.Errorf("destination already exists before renaming: %q", dst)
 			}
 			if err := os.Rename(src, dst); err != nil {
 				return fmt.Errorf("failed to rename file: %w", err)
