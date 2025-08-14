@@ -36,7 +36,6 @@ type config struct {
 func main() {
 	if err := run(os.Args[:]); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		showHelp()
 		os.Exit(exitFailure)
 	}
 }
